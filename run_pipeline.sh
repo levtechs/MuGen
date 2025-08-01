@@ -1,90 +1,87 @@
-#THIS FILE CRASHES! Do NOT run!!!
+#!/bin/bash
 
-#!/bin/sh
+# This script processes a directory of artist subfolders.
+# It iterates through each subfolder, and for each one, it calls a Python script
+# to generate a processed output file.
 
-# ==============================================================================
-# DATASET PROCESSING PIPELINE - ORCHESTRATOR (V3 - Safe Parallelism & Memory Limit)
-# ==============================================================================
+# 'set -e': Exit immediately if a command exits with a non-zero status.
+# 'set -u': Treat unset variables as an error.
+# 'set -o pipefail': The return value of a pipeline is the status of the last command to exit with a non-zero status.
+set -euo pipefail
 
-# --- Configuration ---
-VENV_PATH="venv"
-INPUT_DIR="./clean_midi"
-OUTPUT_DIR="./outputs"
-MAX_JOBS=4 # Number of parallel jobs
+# --- Function to display usage information ---
+usage() {
+  echo "Usage: $0 <input_directory> [output_directory]"
+  echo
+  echo "Arguments:"
+  echo "  <input_directory>   Path to the parent folder containing artist subfolders (e.g., ./cm_split)."
+  echo "  [output_directory]  (Optional) Path to the folder where output files will be saved. Defaults to './outputs'."
+  echo
+  echo "Example:"
+  echo "  $0 ./cm_split ./processed_files"
+  exit 1
+}
 
-# --- MEMORY SAFETY LIMIT ---
-# Max memory PER PROCESS in kilobytes (KB).
-# 4GB = 4 * 1024 * 1024 = 4194304 KB
-# Set this to a safe value below your available RAM.
-# For example, if you have 16GB free, 4GB per process is safe for 4 jobs.
-MEMORY_LIMIT_KB=4194304
+# --- 1. Argument Validation ---
 
-# --- Script Logic ---
-set -eu
-
-TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-MASTER_LOG_FILE="${OUTPUT_DIR}/processing_log_${TIMESTAMP}.log"
-
-PYTHON_EXEC="$VENV_PATH/bin/python3"
-if [ ! -x "$PYTHON_EXEC" ]; then
-    echo "❌ Error: Python executable not found at '$PYTHON_EXEC'" >&2
-    exit 1
+# Check if the mandatory first argument is provided
+if [[ $# -lt 1 ]]; then
+  echo "Error: Missing required input directory argument."
+  usage
 fi
 
+# Assign arguments to variables for clarity
+# $1 is the first argument (input directory)
+# $2 is the second argument (output directory). If it's not provided, default to "./outputs".
+INPUT_DIR="$1"
+OUTPUT_DIR="${2:-./outputs}"
+
+# Check if the provided input directory actually exists
+if [[ ! -d "$INPUT_DIR" ]]; then
+  echo "Error: Input directory '$INPUT_DIR' not found."
+  exit 1
+fi
+
+echo "--- Starting Artist Processing ---"
+echo "Input Directory:   $INPUT_DIR"
+echo "Output Directory:  $OUTPUT_DIR"
+echo "--------------------------------"
+
+
+# --- 2. Setup ---
+
+echo "Activating venv..."
+# This assumes the 'venv' is in the same directory you run the script from.
+source "venv/bin/activate"
+
+echo "Ensuring output directory '$OUTPUT_DIR' exists..."
+# The -p flag creates the directory and any parent directories if they don't exist.
+# It doesn't throw an error if the directory already exists.
 mkdir -p "$OUTPUT_DIR"
-echo "Pipeline started at $(date)" > "$MASTER_LOG_FILE"
-echo "✅ Output will be saved to: $OUTPUT_DIR"
-echo "✅ All detailed logs will be appended to: $MASTER_LOG_FILE"
-echo "✅ Parallel jobs limited to: $MAX_JOBS"
-echo "✅ Memory limit per job set to: $((MEMORY_LIMIT_KB / 1024)) MB"
 
-# --- THIS IS THE MEMORY-SAFE SOLUTION ---
-TOTAL_ARTISTS=$(find "$INPUT_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l | xargs)
 
-echo "Found $TOTAL_ARTISTS artists to process..."
-echo "---"
+# --- 3. Main Processing Loop ---
 
-PROCESSED_COUNT=0
-
-find "$INPUT_DIR" -mindepth 1 -maxdepth 1 -type d | while read -r artist_path; do
-    # --- CORRECT PARALLELISM CONTROL ---
-    # (The rest of your loop body goes here, unchanged)
-    while [ $(jobs -p | wc -l) -ge "$MAX_JOBS" ]; do
-        echo "Number of jobs: $(jobs -p | wc -l)"
-        wait
-    done
-
-    # Now that we know there's a free slot, launch the next job.
-    PROCESSED_COUNT=$((PROCESSED_COUNT + 1))
-    artist_name=$(basename "$artist_path")
-    output_pt_file="$OUTPUT_DIR/${artist_name}.pt"
-
-    if [ -f "$output_pt_file" ]; then
-        echo "[$PROCESSED_COUNT/$TOTAL_ARTISTS] ⏭️  SKIPPING: ${artist_name} (output already exists)"
-        continue
+# Loop through all items in the specified INPUT_DIR
+for folder in "$INPUT_DIR"/*; do
+    # Process only if the item is a directory
+    if [[ -d "$folder" ]]; then
+        # Get just the name of the folder (e.g., "mc_1") from the full path
+        artist_name=$(basename "$folder")
+        
+        # Construct the full path for the output file in the specified OUTPUT_DIR
+        output_file="$OUTPUT_DIR/artist_${artist_name}.pt"
+        
+        echo ""
+        echo "Processing artist folder: $artist_name"
+        
+        # Call the python script with the correct directory and file paths
+        python3 process_artist.py --artist-dir "$folder" --output-file "$output_file"
+        
+        echo "Finished processing: $artist_name"
     fi
-
-    # Launch job in the background within a subshell
-    (
-        echo "[$PROCESSED_COUNT/$TOTAL_ARTISTS] 🚀 STARTING: ${artist_name}"
-        ulimit -v $MEMORY_LIMIT_KB
-        LOG_FILE="${OUTPUT_DIR}/artist-${artist_name}.log"
-        "$PYTHON_EXEC" process_artist.py --artist-dir "$artist_path" --output-file "$output_pt_file" >> "$LOG_FILE" 2>&1
-        if [ $? -eq 0 ]; then
-            echo "[$PROCESSED_COUNT/$TOTAL_ARTISTS] ✅ FINISHED: ${artist_name}"
-        else
-            echo "[$PROCESSED_COUNT/$TOTAL_ARTISTS] ❌ FAILED: ${artist_name}. Check log for details (may be due to memory limit)."
-        fi
-    ) &
 done
 
-# Wait for all remaining background jobs to complete before exiting
-echo "---"
-echo "Waiting for the last batch of jobs to finish..."
-wait
-echo "All jobs complete."
-
-echo "---" >> "$MASTER_LOG_FILE"
-echo "Pipeline finished at $(date)" >> "$MASTER_LOG_FILE"
-echo "🎉 All artists processed!"
-echo "✅ Dataset generated in $OUTPUT_DIR"
+echo ""
+echo "--------------------------------"
+echo "✅ All artists processed successfully."

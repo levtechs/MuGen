@@ -1,9 +1,18 @@
 # --- START OF FILE process_artist.py ---
 
+# Does midi processing on a single artist (subdirectory)
+# Converts subdirectory including a list of midi files into a .pt dataset 
+# Dataset consists of inputs (non drum track) and outputs (drum track)
+# Each input/output is a numpy matrix corresponding to one measure of one instrument of one track
+# If there are multiple non drum instruments in one midi track, there will be one pair for each one
+# This script is called from run_pipeline.sh orchestrator script
+
 import argparse
 import gc
 import os
-from typing import List, Tuple
+
+import sys
+sys.stdout.reconfigure(line_buffering=True)
 
 import numpy as np
 import torch

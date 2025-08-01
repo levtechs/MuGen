@@ -1,4 +1,10 @@
-outputs_saved/
-*.pt
-*.pth
+#virtual env may be different for each user 
 venv/
+
+# large dataset file
+outputs/
+clean_midi/
+cm_split/
+
+#pycache
+pp/__pycache__/
