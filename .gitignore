@@ -1,0 +1,4 @@
+outputs_saved/
+*.pt
+*.pth
+venv/
