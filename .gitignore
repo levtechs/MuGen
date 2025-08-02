@@ -1,10 +1,11 @@
 #virtual env may be different for each user 
 venv/
 
-# large dataset file
+# large dataset files
 outputs/
 clean_midi/
 cm_split/
+outputs_saved/
 
 #pycache
 pp/__pycache__/

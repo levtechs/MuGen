@@ -3,6 +3,8 @@
 # A script to evenly distribute the contents (files/folders) of a source directory
 # into a specified number of new subdirectories.
 
+# This was used to split clean_midi into smaller subdirectories to break down the preprocessing task. 
+
 # --- Function to display usage information ---
 usage() {
   echo "Usage: $0 <source_directory> <num_splits> [output_directory_name] [split_prefix]"
